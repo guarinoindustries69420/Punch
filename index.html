@@ -21,7 +21,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex, nofollow" />
-  <title>PUNCH Time Clock</title>
+<title>PUNCH Time Clock</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=JetBrains+Mono:wght@200;300;400;500;700&display=swap');
@@ -75,6 +75,7 @@ body{
 .pc-input{ width:100%; background:var(--panel); border:1px solid var(--line); border-radius:13px; padding:15px 16px; color:var(--text); font-family:inherit; font-size:15px; margin-bottom:22px; text-align:center; outline:none; }
 .pc-input:focus{ border-color:var(--amber); }
 .pc-input::placeholder{ color:#5e564b; }
+.pc-input.slim{ padding:11px 12px; margin-bottom:10px; font-size:13.5px; text-align:left; }
 
 .pc-dots{ display:flex; justify-content:center; gap:16px; margin-bottom:26px; }
 .pc-dots.err{ animation:shake .45s; }
@@ -281,10 +282,9 @@ const state = {
   route: "roster",       // roster | pin | add | adminpin | clock | admin
   busy: false,
   employees: [],
-  rosterEdit: false,
   selected: null,
   pin: "", pinErr: false,
-  addName: "", addPin: "",
+  adminAdd: false, adminAddName: "", adminAddPin: "", addErr: "",
   apin: "", aErr: false,
   current: null,
   shifts: [],
@@ -331,15 +331,12 @@ function renderRoster(){
   const emps = state.employees;
   let cards = "";
   for(const e of emps){
-    cards += '<button class="pc-emp" onclick="app.'+(state.rosterEdit?("deleteEmployee('"+e.id+"')"):("openPin('"+e.id+"')"))+'">'+
-      '<span class="pc-avatar">'+esc(initials(e.name))+'</span><span class="pc-emp-name">'+esc(e.name)+'</span>'+
-      (state.rosterEdit?'<span class="pc-emp-x">&#10005;</span>':"")+'</button>';
+    cards += '<button class="pc-emp" onclick="app.openPin(\''+e.id+'\')">'+
+      '<span class="pc-avatar">'+esc(initials(e.name))+'</span><span class="pc-emp-name">'+esc(e.name)+'</span></button>';
   }
   $app().innerHTML = '<div class="pc-signin pc-rise">'+brandCenter+
-    '<div class="pc-si-title"><span>'+(emps.length?"Who&#39;s clocking in?":"Welcome")+'</span>'+
-    (emps.length?'<button class="pc-mini" onclick="app.toggleRosterEdit()">'+(state.rosterEdit?"Done":"Edit")+'</button>':"")+'</div>'+
-    (emps.length?('<div class="pc-roster">'+cards+'</div>'):'<div class="pc-empty center">No employees yet. Add the first one to get started.</div>')+
-    '<button class="pc-add-btn" onclick="app.openAdd()">+ Add Employee</button>'+
+    '<div class="pc-si-title"><span>'+(emps.length?"Who&#39;s clocking in?":"Welcome")+'</span></div>'+
+    (emps.length?('<div class="pc-roster">'+cards+'</div>'):'<div class="pc-empty center">No employees yet. The manager can add the team via Manager sign-in below.</div>')+
     '<button class="pc-mgr" onclick="app.openManager()">&#128273; Manager sign-in</button>'+
     '<div class="pc-foot">Punches are saved to your company database.</div></div>';
 }
@@ -361,16 +358,6 @@ function renderAdminPin(){
     '<div class="pc-emp-name big">Manager Access</div>'+
     '<div class="pc-pin-hint">'+(state.aErr?"Incorrect master PIN":"Enter master PIN")+'</div></div>'+
     dotsHTML(state.apin.length, state.aErr)+padHTML()+'</div>';
-}
-
-function renderAdd(){
-  $app().innerHTML = '<div class="pc-signin pc-rise">'+brandCenter+
-    '<button class="pc-back" onclick="app.back()">&#8249; Back</button>'+
-    '<div class="pc-pin-head"><div class="pc-emp-name big">New Employee</div>'+
-    '<div class="pc-pin-hint">Name and a 4-digit PIN</div></div>'+
-    '<input class="pc-input" placeholder="Full name" maxlength="40" value="'+esc(state.addName)+'" oninput="app.syncAddName(this.value)" />'+
-    dotsHTML(state.addPin.length,false)+padHTML()+
-    '<button class="pc-btn go full" '+((state.addName.trim()&&state.addPin.length===4&&!state.busy)?"":"disabled")+' onclick="app.createEmployee()">'+(state.busy?"Saving\u2026":"Create Employee")+'</button></div>';
 }
 
 function renderClock(){
@@ -488,7 +475,17 @@ function renderAdmin(){
       '<div class="pc-erow-fig"><div><div class="pc-erow-pay">'+money(r.pay)+'</div><div class="pc-erow-hrs">'+fmtDur(r.ms)+'</div></div>'+
       '<span class="pc-chev '+(state.expanded===e.id?"open":"")+'">&#9660;</span></div></div>'+detail+'</div>';
   }
-  if(!emps.length) list = '<div class="pc-empty">No employees yet. Add them from the sign-in screen.</div>';
+  if(!emps.length) list = '<div class="pc-empty">No employees yet. Tap + Add above to create your team.</div>';
+
+  let addForm = "";
+  if(state.adminAdd){
+    addForm = '<div class="pc-shift-edit">'+
+      '<input class="pc-input slim" id="js-aaname" placeholder="Full name" maxlength="40" value="'+esc(state.adminAddName)+'" oninput="app.syncAdminAddName(this.value)" />'+
+      '<input class="pc-input slim" placeholder="4-digit PIN for this employee" inputmode="numeric" maxlength="4" value="'+esc(state.adminAddPin)+'" oninput="app.syncAdminAddPin(this.value)" onkeydown="if(event.key===\'Enter\')app.adminCreateEmployee()" />'+
+      (state.addErr?('<div class="pc-err-text">'+esc(state.addErr)+'</div>'):"")+
+      '<div class="pc-edit-actions"><button class="pc-mini accent" onclick="app.adminCreateEmployee()">'+(state.busy?"Saving\u2026":"Create")+'</button>'+
+      '<button class="pc-mini" onclick="app.cancelAdminAdd()">Cancel</button></div></div>';
+  }
 
   $app().innerHTML =
     '<header class="pc-head pc-rise"><div class="pc-brand"><span class="pc-brand-mark">PUNCH</span><span class="pc-brand-sub">manager</span></div>'+
@@ -498,12 +495,14 @@ function renderAdmin(){
     '<section class="pc-payroll pc-rise"><div class="pc-pr-col"><div class="pc-pr-label">Total Hours</div><div class="pc-pr-val">'+fmtDur(totalHrs*3600000)+'</div></div>'+
     '<div class="pc-pr-div"></div><div class="pc-pr-col"><div class="pc-pr-label">Total Payroll</div><div class="pc-pr-val amber">'+money(totalPay)+'</div></div></section>'+
     '<section class="pc-card pc-rise"><div class="pc-card-head pc-card-head-row"><span>Team &#183; '+periodLabel+'</span>'+
-    '<div class="pc-head-actions"><button class="pc-mini" onclick="app.refreshAdmin()">Refresh</button>'+
-    (emps.length?'<button class="pc-mini" onclick="app.exportPayroll()">Payroll</button>':"")+'</div></div>'+list+'</section>'+
+    '<div class="pc-head-actions"><button class="pc-mini accent" onclick="app.startAdminAdd()">+ Add</button>'+
+    '<button class="pc-mini" onclick="app.refreshAdmin()">Refresh</button>'+
+    (emps.length?'<button class="pc-mini" onclick="app.exportPayroll()">Payroll</button>':"")+'</div></div>'+addForm+list+'</section>'+
     '<div class="pc-foot pc-rise">Live view auto-refreshes every 30 seconds. Pay rates require the master PIN.</div>';
 
   const ni=document.getElementById("js-nameinput"); if(ni){ ni.focus(); }
   const ri=document.getElementById("js-rateinput"); if(ri){ ri.focus(); }
+  const ai=document.getElementById("js-aaname"); if(ai && !state.adminAddName && !state.adminAddPin){ ai.focus(); }
 }
 
 function shiftEditorHTML(existing){
@@ -522,7 +521,6 @@ function render(){
   switch(state.route){
     case "roster": renderRoster(); break;
     case "pin": renderPin(); break;
-    case "add": renderAdd(); break;
     case "adminpin": renderAdminPin(); break;
     case "clock": renderClock(); break;
     case "admin": renderAdmin(); break;
@@ -531,11 +529,9 @@ function render(){
 
 /* ---------- actions ---------- */
 const app = {
-  toggleRosterEdit(){ state.rosterEdit=!state.rosterEdit; render(); },
-  openAdd(){ state.addName=""; state.addPin=""; state.route="add"; render(); },
   openManager(){ state.apin=""; state.aErr=false; state.route="adminpin"; render(); },
   openPin(id){ const e=state.employees.find((x)=>x.id===id); if(!e)return; state.selected=e; state.pin=""; state.pinErr=false; state.route="pin"; render(); },
-  back(){ state.route="roster"; state.selected=null; state.pin=""; state.apin=""; state.addName=""; state.addPin=""; app.loadRoster(); },
+  back(){ state.route="roster"; state.selected=null; state.pin=""; state.apin=""; app.loadRoster(); },
 
   async loadRoster(){
     render();
@@ -558,32 +554,35 @@ const app = {
         if(hashPin(state.apin)===MASTER_PIN_HASH){ app.enterAdmin(); }
         else { state.aErr=true; render(); setTimeout(()=>{ state.apin=""; state.aErr=false; if(state.route==="adminpin")render(); },550); }
       }
-    } else if(state.route==="add"){
-      if(state.addPin.length>=4)return;
-      state.addPin+=d; render();
     }
   },
   del(){
     if(state.route==="pin") state.pin=state.pin.slice(0,-1);
     else if(state.route==="adminpin") state.apin=state.apin.slice(0,-1);
-    else if(state.route==="add") state.addPin=state.addPin.slice(0,-1);
     render();
   },
   clearPin(){
     if(state.route==="pin") state.pin="";
     else if(state.route==="adminpin") state.apin="";
-    else if(state.route==="add") state.addPin="";
     render();
   },
-  syncAddName(v){ state.addName=v; },
-
-  async createEmployee(){
-    if(!state.addName.trim()||state.addPin.length!==4||state.busy)return;
-    state.busy=true; render();
+  startAdminAdd(){ state.adminAdd=true; state.adminAddName=""; state.adminAddPin=""; state.addErr=""; render(); },
+  cancelAdminAdd(){ state.adminAdd=false; state.addErr=""; render(); },
+  syncAdminAddName(v){ state.adminAddName=v; },
+  syncAdminAddPin(v){ state.adminAddPin=v.replace(/[^0-9]/g,"").slice(0,4); },
+  async adminCreateEmployee(){
+    const name = state.adminAddName.trim();
+    if(!name){ state.addErr="Enter the employee's name."; render(); return; }
+    if(!/^\d{4}$/.test(state.adminAddPin)){ state.addErr="PIN must be exactly 4 digits."; render(); return; }
+    if(state.busy)return;
+    state.busy=true;
     try{
-      await dbAddEmployee(state.addName.trim(), state.addPin);
-      state.busy=false; app.back();
-    }catch(e){ state.busy=false; netErr(e); render(); }
+      const e = await dbAddEmployee(name, state.adminAddPin);
+      state.employees.push(e);
+      state.byEmp[e.id]=[];
+      state.adminAdd=false; state.addErr="";
+    }catch(err){ netErr(err); }
+    state.busy=false; render();
   },
 
   async deleteEmployee(id){
@@ -769,7 +768,7 @@ setInterval(()=>{
 },1000);
 
 setInterval(()=>{
-  if(state.route==="admin" && !state.shiftEdit && state.nameEditId==null && state.rateEditId==null){ app.reloadAdmin(); }
+  if(state.route==="admin" && !state.shiftEdit && !state.adminAdd && state.nameEditId==null && state.rateEditId==null){ app.reloadAdmin(); }
 },30000);
 
 /* ---------- boot ---------- */
